@@ -4,7 +4,7 @@
 
 JSON_INPUT=$(cat)
 
-model=$(echo "$JSON_INPUT" | jq -r '.model.display_name // "Claude"')
+model=$(echo "$JSON_INPUT" | jq -r '.model.display_name // "Claude"' | sed 's/ ([^)]*)//' | sed 's/\([A-Za-z]\) \([0-9]\)/\1\2/g')
 percent=$(echo "$JSON_INPUT" | jq -r '.context_window.used_percentage // 0')
 ctx_size=$(echo "$JSON_INPUT" | jq -r '.context_window.context_window_size // 0')
 ctx_used=$(echo "$JSON_INPUT" | jq -r '(.context_window.current_usage.input_tokens // 0) + (.context_window.current_usage.cache_read_input_tokens // 0) + (.context_window.current_usage.cache_creation_input_tokens // 0)')
@@ -27,8 +27,8 @@ PROGRESS_EMPTY="░"
 
 get_progress_bar() {
     local p=$1
-    local filled=$((p / 10))
-    local empty=$((10 - filled))
+    local filled=$((p / 20))
+    local empty=$((5 - filled))
     local bar=""
     for ((i=0; i<filled; i++)); do bar+="${PROGRESS_FILLED}"; done
     for ((i=0; i<empty; i++)); do bar+="${PROGRESS_EMPTY}"; done
@@ -106,7 +106,7 @@ fi
 
 # --- Line 1: model + context + rate limits ---
 printf "${MODEL_COLOR}[${model}]${RESET} "
-printf "${PROGRESS_BAR}${progress_bar} ${ctx_used_fmt} / ${ctx_size_fmt}${RESET}"
+printf "${PROGRESS_BAR}${progress_bar}${ctx_used_fmt}/${ctx_size_fmt}${RESET}"
 
 if (( rl_show )); then
     rl_color() {
@@ -116,11 +116,12 @@ if (( rl_show )); then
         else echo -ne "$PROGRESS_LOW"
         fi
     }
+
     printf " ${TOKEN_COLOR}|${RESET}"
     printf " $(rl_color $rl_session_pct)5h:%d%%${RESET}" "$rl_session_pct"
-    [[ -n "$rl_session_reset" ]] && printf " ${TOKEN_COLOR}↻%s${RESET}" "$rl_session_reset"
+    [[ -n "$rl_session_reset" ]] && printf "${TOKEN_COLOR}↻%s${RESET}" "${rl_session_reset#today }"
     printf " $(rl_color $rl_week_pct)7d:%d%%${RESET}" "$rl_week_pct"
-    [[ -n "$rl_week_reset" ]] && printf " ${TOKEN_COLOR}↻%s${RESET}" "$rl_week_reset"
+    [[ -n "$rl_week_reset" ]] && printf "${TOKEN_COLOR}↻%s${RESET}" "$rl_week_reset"
     # Show cache age if stale (>10 min)
     if (( rl_age > 600 )); then
         printf " ${TOKEN_COLOR}(%dm ago)${RESET}" "$((rl_age / 60))"
@@ -136,13 +137,13 @@ if [[ -n "$cwd" ]]; then
         git_status=$(get_git_status "$cwd")
         printf " ${GIT_COLOR}(${git_branch})${RESET}"
         if [[ "$git_status" == "clean" ]]; then
-            printf " ${GIT_CLEAN}✓${RESET}"
+            printf "${GIT_CLEAN}✓${RESET}"
         else
-            printf " ${GIT_DIRTY}✗${RESET}"
+            printf "${GIT_DIRTY}✗${RESET}"
             read added modified untracked <<< "$(get_git_counts "$cwd")"
-            [[ "$added" -gt 0 ]] && printf " ${GIT_CLEAN}+%s${RESET}" "$added"
-            [[ "$modified" -gt 0 ]] && printf " ${PROGRESS_MID}~%s${RESET}" "$modified"
-            [[ "$untracked" -gt 0 ]] && printf " ${TOKEN_COLOR}?%s${RESET}" "$untracked"
+            [[ "$added" -gt 0 ]] && printf "${GIT_CLEAN}+%s${RESET}" "$added"
+            [[ "$modified" -gt 0 ]] && printf "${PROGRESS_MID}~%s${RESET}" "$modified"
+            [[ "$untracked" -gt 0 ]] && printf "${TOKEN_COLOR}?%s${RESET}" "$untracked"
         fi
     fi
 fi
