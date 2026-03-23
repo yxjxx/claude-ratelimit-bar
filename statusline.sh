@@ -94,13 +94,15 @@ if [[ -f "$RATE_CACHE" ]]; then
     # Auto-refresh in background if cache older than 10 min
     if (( rl_age > RATE_MAX_AGE )); then
         if [[ ! -f "${RATE_CACHE}.lock" ]]; then
-            python3 "$RATE_PROBE" >/dev/null 2>&1 &
+            nohup python3 "$RATE_PROBE" >/dev/null 2>&1 &
+            disown 2>/dev/null
         fi
     fi
 else
     # No cache yet, trigger first probe in background
     if [[ -f "$RATE_PROBE" && ! -f "${RATE_CACHE}.lock" ]]; then
-        python3 "$RATE_PROBE" >/dev/null 2>&1 &
+        nohup python3 "$RATE_PROBE" >/dev/null 2>&1 &
+        disown 2>/dev/null
     fi
 fi
 
@@ -122,9 +124,12 @@ if (( rl_show )); then
     [[ -n "$rl_session_reset" ]] && printf "${TOKEN_COLOR}↻%s${RESET}" "${rl_session_reset#today }"
     printf " $(rl_color $rl_week_pct)7d:%d%%${RESET}" "$rl_week_pct"
     [[ -n "$rl_week_reset" ]] && printf "${TOKEN_COLOR}↻%s${RESET}" "$rl_week_reset"
-    # Show cache age if stale (>10 min)
+    # Show cache freshness: @HH:MM if fresh, (Xm ago) if stale
     if (( rl_age > 600 )); then
-        printf " ${TOKEN_COLOR}(%dm ago)${RESET}" "$((rl_age / 60))"
+        printf " ${PROGRESS_MID}(%dm ago)${RESET}" "$((rl_age / 60))"
+    else
+        rl_time=$(jq -r '.time_str // ""' "$RATE_CACHE" 2>/dev/null)
+        [[ -n "$rl_time" ]] && printf " ${TOKEN_COLOR}@%s${RESET}" "${rl_time%:*}"
     fi
 fi
 printf "\n"
@@ -147,3 +152,5 @@ if [[ -n "$cwd" ]]; then
         fi
     fi
 fi
+
+exit 0

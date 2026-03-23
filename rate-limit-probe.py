@@ -49,8 +49,9 @@ def parse_usage(text):
     result = {}
 
     # Grab all "XX% used" and "Resets TIME" in order
+    # Handles "Resets 8pm", "Resets Mar 30 at 11am", and spaceless TUI output "ResetsMar30at11am"
     all_pcts = re.findall(r'(\d+)%\s*used', text)
-    all_resets = re.findall(r'Rese[ts]*\s*(\d+\s*[ap]m)\s*(?:\([^)]+\))?', text, re.IGNORECASE)
+    all_resets = re.findall(r'Rese[ts]*\s*(?:([A-Za-z]{3,})\s*(\d{1,2})\s*(?:at\s*)?)?\s*(\d{1,2})\s*([ap]m)', text, re.IGNORECASE)
 
     # Assign by position: [0]=session, [1]=week_all, [2]=week_sonnet
     if len(all_pcts) >= 1:
@@ -60,28 +61,30 @@ def parse_usage(text):
     if len(all_pcts) >= 3:
         result['week_sonnet_pct'] = int(all_pcts[2])
 
-    def enrich_reset(raw_time):
-        """Convert '7pm' to 'today 19:00' or 'Mon 10:00' with 24h format."""
-        raw_time = raw_time.strip()
-        m = re.match(r'(\d+)\s*([ap]m)', raw_time, re.IGNORECASE)
-        if not m:
-            return raw_time
+    def enrich_reset(match_tuple):
+        """Convert regex match (month, day, hour, ampm) to display string.
+        month/day may be empty for simple '8pm' format."""
         import datetime
-        hour = int(m.group(1))
-        is_pm = m.group(2).lower() == 'pm'
-        if is_pm and hour != 12:
+        month_str, day_str, hour_str, ampm = match_tuple
+        hour = int(hour_str)
+        if ampm.lower() == 'pm' and hour != 12:
             hour += 12
-        elif not is_pm and hour == 12:
+        elif ampm.lower() == 'am' and hour == 12:
             hour = 0
         h24 = f"{hour}:00"
+
+        if month_str:
+            # Future date reset: "Mar 30 at 11am" → "Mar30 11:00"
+            return f"{month_str}{day_str} {h24}"
+
+        # Same-day/next-day reset: "8pm" → "today 20:00" or "Tue 20:00"
         now = datetime.datetime.now()
         reset_today = now.replace(hour=hour, minute=0, second=0, microsecond=0)
         if reset_today > now:
             return f"today {h24}"
         else:
             tomorrow = now + datetime.timedelta(days=1)
-            weekday = tomorrow.strftime('%a')
-            return f"{weekday} {h24}"
+            return f"{tomorrow.strftime('%a')} {h24}"
 
     if len(all_resets) >= 1:
         result['session_reset'] = enrich_reset(all_resets[0])
@@ -103,32 +106,37 @@ def probe():
     os.close(slave)
 
     try:
+        # Accumulate all output across the session
+        all_output = b""
+
         # Startup + trust prompt
         out1 = read_all(master, 20)
+        all_output += out1
         clean1 = clean_ansi(out1)
         if 'trust' in clean1.lower():
             os.write(master, b"\r")
-            read_all(master, 15)
+            all_output += read_all(master, 15)
 
         # Send /status
         os.write(master, b"/status\r")
         time.sleep(3)
-        read_all(master, 3)
+        all_output += read_all(master, 3)
 
         # Navigate: Status -> Config -> Usage (two right arrows)
         os.write(master, b"\x1b[C")
         time.sleep(2)
-        read_all(master, 2)
+        all_output += read_all(master, 2)
 
         os.write(master, b"\x1b[C")
-        time.sleep(4)
+        time.sleep(5)
+        all_output += read_all(master, 8)
 
-        out_usage = read_all(master, 5)
-        usage_text = clean_ansi(out_usage)
+        # Parse from accumulated output (TUI redraws may split data across reads)
+        usage_text = clean_ansi(all_output)
 
         # Parse
         result = parse_usage(usage_text)
-        result['raw'] = usage_text[:500]
+        result['raw'] = usage_text[-500:]
 
         return result
 
