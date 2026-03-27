@@ -83,26 +83,24 @@ RATE_PROBE="$HOME/.claude/rate-limit-probe.py"
 RATE_MAX_AGE=600  # 10 minutes
 rl_show=0
 if [[ -f "$RATE_CACHE" ]]; then
-    rl_session_pct=$(jq -r '.session_pct // 0' "$RATE_CACHE" 2>/dev/null)
-    rl_week_pct=$(jq -r '.week_all_pct // 0' "$RATE_CACHE" 2>/dev/null)
-    rl_session_reset=$(jq -r '.session_reset // ""' "$RATE_CACHE" 2>/dev/null)
-    rl_week_reset=$(jq -r '.week_all_reset // ""' "$RATE_CACHE" 2>/dev/null)
-    rl_ts=$(jq -r '.timestamp // 0' "$RATE_CACHE" 2>/dev/null)
-    rl_age=$(( $(date +%s) - ${rl_ts%.*} ))
-    rl_show=1
+    # Only show rate limits if probe actually captured data (session_pct exists)
+    rl_has_data=$(jq -r 'has("session_pct")' "$RATE_CACHE" 2>/dev/null)
+    if [[ "$rl_has_data" == "true" ]]; then
+        rl_session_pct=$(jq -r '.session_pct // 0' "$RATE_CACHE" 2>/dev/null)
+        rl_week_pct=$(jq -r '.week_all_pct // 0' "$RATE_CACHE" 2>/dev/null)
+        rl_session_reset=$(jq -r '.session_reset // ""' "$RATE_CACHE" 2>/dev/null)
+        rl_week_reset=$(jq -r '.week_all_reset // ""' "$RATE_CACHE" 2>/dev/null)
+        rl_ts=$(jq -r '.timestamp // 0' "$RATE_CACHE" 2>/dev/null)
+        rl_age=$(( $(date +%s) - ${rl_ts%.*} ))
+        rl_show=1
 
-    # Auto-refresh in background if cache older than 10 min
-    if (( rl_age > RATE_MAX_AGE )); then
-        if [[ ! -f "${RATE_CACHE}.lock" ]]; then
-            nohup python3 "$RATE_PROBE" >/dev/null 2>&1 &
-            disown 2>/dev/null
+        # Auto-refresh in background if cache older than 10 min
+        if (( rl_age > RATE_MAX_AGE )); then
+            if [[ ! -f "${RATE_CACHE}.lock" ]]; then
+                nohup python3 "$RATE_PROBE" >/dev/null 2>&1 &
+                disown 2>/dev/null
+            fi
         fi
-    fi
-else
-    # No cache yet, trigger first probe in background
-    if [[ -f "$RATE_PROBE" && ! -f "${RATE_CACHE}.lock" ]]; then
-        nohup python3 "$RATE_PROBE" >/dev/null 2>&1 &
-        disown 2>/dev/null
     fi
 fi
 
