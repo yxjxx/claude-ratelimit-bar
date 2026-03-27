@@ -117,17 +117,8 @@ def probe():
             os.write(master, b"\r")
             all_output += read_all(master, 15)
 
-        # Send /status
-        os.write(master, b"/status\r")
-        time.sleep(3)
-        all_output += read_all(master, 3)
-
-        # Navigate: Status -> Config -> Usage (two right arrows)
-        os.write(master, b"\x1b[C")
-        time.sleep(2)
-        all_output += read_all(master, 2)
-
-        os.write(master, b"\x1b[C")
+        # Send /usage directly (opens Usage tab, no arrow navigation needed)
+        os.write(master, b"/usage\r")
         time.sleep(5)
         all_output += read_all(master, 8)
 
